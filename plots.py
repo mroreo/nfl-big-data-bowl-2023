@@ -12,7 +12,7 @@ import plotly.io as pio
 import plotly.graph_objects as go
 from distances import dist_to_qb, calc_dist
 
-pio.renderers.default = 'browser'
+#pio.renderers.default = 'browser'
 
 COLORS = {
     'ARI':"#97233F", 
@@ -64,13 +64,43 @@ def plot_play_df(fig, play_df, colors=COLORS):
         frame_df = play_df.query('frameId == @frameId').reset_index(drop=True)
         j_idx = []
         for team, group_df in frame_df.groupby('team'):
+            
             hover_txt_arr = gen_hover_txt(group_df)
-            if team != 'football':
+            if team != 'football' and team != 'pocket_polygon' and team != 'affected_pocket_polygon':
                 fig.add_trace(go.Scatter(x=group_df["x"], y=group_df["y"],mode = 'markers',marker_color=colors[team],name=team,
                                          hovertemplate=hover_txt_arr, visible=False))
-            else:
+            elif team == 'football':
                 fig.add_trace(go.Scatter(x=group_df["x"], y=group_df["y"],mode = 'markers',marker_color=colors[team],name=team,
                                          hovertemplate="", visible=False))
+            elif team == 'pocket_polygon':
+                pocket_polygon = group_df['pocket_polygon'].values[0]
+                xx, yy = pocket_polygon.exterior.coords.xy
+
+                fig.add_trace(go.Scatter(x=list(xx), y=list(yy),fill='toself',hovertemplate="pocketarea: {}<br>".format(round(pocket_polygon.area,2)), fillcolor='rgba(255, 0, 0, 0.1)', visible=False))
+            
+            elif team == 'affected_pocket_polygon':
+                pocket_polygon = group_df['affected_pocket_polygon'].values[0]
+                
+                if pocket_polygon:
+                    
+                    if pocket_polygon.type =='MultiPolygon':
+                        
+                        xx, yy = [], []
+                        for geom in pocket_polygon.geoms:
+                            sub_xx, sub_yy = geom.exterior.coords.xy
+                            xx.append(sub_xx), yy.append(sub_yy)
+                            
+                        xx = np.concatenate(np.array(xx))
+                        yy = np.concatenate(np.array(yy))
+                    
+                    else:
+                        xx, yy = pocket_polygon.exterior.coords.xy
+                    
+                    fig.add_trace(go.Scatter(x=list(xx), y=list(yy),fill='toself',line_color='pink', visible=False))
+                
+                else:
+                    fig.add_trace(go.Scatter(x=[], y=[],fill='toself',line_color='pink', visible=False))
+                
             j_idx.append(counter)
             counter += 1
         frame_id_dict[frameId] = j_idx
@@ -97,13 +127,21 @@ def plot_play_df(fig, play_df, colors=COLORS):
         sliders=sliders
     )
     
-def plot_game_play_id(game_df, gameId, playId):
+def plot_game_play_id(game_df, gameId, playId, size=(800, 400)):
     play_df = game_df.query('(gameId == @gameId) & (playId == @playId)')
-    play_df['displayName'] = np.where(play_df['team'] == 'football', '',play_df['displayName'])
+    play_df['displayName'] = np.where(play_df['team'].isin(['football','pocket_polygon','affected_pocket_polygon']), '',play_df['displayName'])
     
     fig = go.Figure( layout_yaxis_range=[0,53.3], layout_xaxis_range=[0,120])
-    mod_play_df = dist_to_qb(play_df)
+    if 'dist_to_qb' not in play_df.columns:
+        mod_play_df = dist_to_qb(play_df)
+    else:
+        mod_play_df = play_df
+    
     plot_play_df(fig, mod_play_df)
+    fig.update_layout(
+        autosize=False,
+        width=size[0],
+        height=size[1])
     fig.show()
     
 def plot_rusher_distances(game_df, gameId, playId):
