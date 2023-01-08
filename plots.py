@@ -66,18 +66,24 @@ def plot_play_df(fig, play_df, colors=COLORS):
         for team, group_df in frame_df.groupby('team'):
             
             hover_txt_arr = gen_hover_txt(group_df)
-            if team != 'football' and team != 'pocket_polygon' and team != 'affected_pocket_polygon':
+            
+            if team != 'football' and team != 'pocket_polygon' and team != 'affected_pocket_polygon' and team != 'player_polygon':
                 fig.add_trace(go.Scatter(x=group_df["x"], y=group_df["y"],mode = 'markers',marker_color=colors[team],name=team,
                                          hovertemplate=hover_txt_arr, visible=False))
+                j_idx.append(counter)
+                counter += 1
             elif team == 'football':
                 fig.add_trace(go.Scatter(x=group_df["x"], y=group_df["y"],mode = 'markers',marker_color=colors[team],name=team,
                                          hovertemplate="", visible=False))
+                j_idx.append(counter)
+                counter += 1
             elif team == 'pocket_polygon':
                 pocket_polygon = group_df['pocket_polygon'].values[0]
                 xx, yy = pocket_polygon.exterior.coords.xy
 
                 fig.add_trace(go.Scatter(x=list(xx), y=list(yy),fill='toself',hovertemplate="pocketarea: {}<br>".format(round(pocket_polygon.area,2)), fillcolor='rgba(255, 0, 0, 0.1)', visible=False))
-            
+                j_idx.append(counter)
+                counter += 1
             elif team == 'affected_pocket_polygon':
                 pocket_polygon = group_df['affected_pocket_polygon'].values[0]
                 
@@ -101,8 +107,43 @@ def plot_play_df(fig, play_df, colors=COLORS):
                 else:
                     fig.add_trace(go.Scatter(x=[], y=[],fill='toself',line_color='pink', visible=False))
                 
-            j_idx.append(counter)
-            counter += 1
+                
+                j_idx.append(counter)
+                counter += 1
+            elif team == 'player_polygon':
+                
+                for i, row in group_df.iterrows():
+                    
+                    pff_role = row['pff_role']
+                    player_polygon = row['player_polygon']
+                    
+                    if pff_role == 'Pass Blocker':
+                        color = 'lightgreen'
+                    else:
+                        color = 'pink'
+                
+                    if player_polygon:
+                        
+                        if player_polygon.type =='MultiPolygon':
+                            
+                            xx, yy = [], []
+                            for geom in pocket_polygon.geoms:
+                                sub_xx, sub_yy = geom.exterior.coords.xy
+                                xx.append(sub_xx), yy.append(sub_yy)
+                                
+                            xx = np.concatenate(np.array(xx))
+                            yy = np.concatenate(np.array(yy))
+                        
+                        else:
+                            xx, yy = player_polygon.exterior.coords.xy
+                        
+                        fig.add_trace(go.Scatter(x=list(xx), y=list(yy),fill='toself',line_color=color, visible=False, name=pff_role))
+                    
+                    else:
+                        fig.add_trace(go.Scatter(x=[], y=[],fill='toself',line_color=color, visible=False, name=pff_role))
+                    
+                    j_idx.append(counter)
+                    counter += 1
         frame_id_dict[frameId] = j_idx
     
     steps = []
@@ -129,7 +170,7 @@ def plot_play_df(fig, play_df, colors=COLORS):
     
 def plot_game_play_id(game_df, gameId, playId, size=(800, 400)):
     play_df = game_df.query('(gameId == @gameId) & (playId == @playId)')
-    play_df['displayName'] = np.where(play_df['team'].isin(['football','pocket_polygon','affected_pocket_polygon']), '',play_df['displayName'])
+    play_df['displayName'] = np.where(play_df['team'].isin(['football','pocket_polygon','affected_pocket_polygon', 'player_polygon']), '',play_df['displayName'])
     
     fig = go.Figure( layout_yaxis_range=[0,53.3], layout_xaxis_range=[0,120])
     if 'dist_to_qb' not in play_df.columns:
