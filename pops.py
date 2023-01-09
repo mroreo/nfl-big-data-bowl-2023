@@ -436,6 +436,8 @@ individual_pr_feats_df['pass_rusher_influence_score'] = individual_pr_feats_df['
 individual_pr_feats_df['pass_rusher_influence_score'] = np.where(individual_pr_feats_df['pass_rusher_influence_score'] > max_pass_rusher_influence_score, max_pass_rusher_influence_score,
                                                                         individual_pr_feats_df['pass_rusher_influence_score'])
 
+a = pr_influence_stats_df_calced.query('(gameId == 2021110100) & (playId == 393) & (displayName == "Azeez Ojulari")')
+
 #Calc pocket penetration frame
 pocket_penetration_df = pr_influence_stats_df_calced.groupby(['gameId', 'playId', 'nflId']).apply(lambda x: get_pocket_penetration_frame(x))
 pocket_penetration_df = pocket_penetration_df.reset_index()
@@ -471,8 +473,8 @@ idx = 0
 gameId = all_gameplays_df['gameId'].values[idx]
 playId = all_gameplays_df['playId'].values[idx]
 
-gameId = 2021101700
-playId = 4071
+gameId = 2021110100
+playId = 393
 
 pr_stats_df = pr_influence_stats_df_calced.query('(gameId == @gameId) & (playId == @playId)')
 pocket_area_stats_df = pocket_area_df.query('(gameId == @gameId) & (playId == @playId)')
@@ -503,6 +505,9 @@ pocket_append_polygon = pocket_area_df[['gameId', 'playId', 'frameId', 'pocket_p
 pocket_append_polygon['team'] = 'pocket_polygon'
 pb_and_pr_appended = pd.concat([week_df, pass_blockers_append_polygon, pass_rushers_append_polygon, pocket_append_polygon], axis=0)
 plot_game_play_id(pb_and_pr_appended, gameId, playId, size=(1200, 800))
+
+make_gif('./images/jerome_baker', './images/jerome_baker.gif')
+make_gif('./images/azeez_ojulari', './images/azeez_ojulari.gif')
 
 
 
