@@ -1,5 +1,5 @@
 variables,coefficients
-pocket_penetration_ind,0.9557786580533992
-penetration_time_since_snap_s,0.8031726972245727
-pass_rusher_influence_score,0.8363251825051039
-intercept,-1.6368856275907568
+pocket_penetration_ind,0.9557786580533909
+penetration_time_since_snap_s,0.8031726972245606
+pass_rusher_influence_score,0.8363251825050981
+intercept,-1.6368856275907455
