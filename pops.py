@@ -387,7 +387,11 @@ valid_y = valid_df['pass_incomplete_ind'].values
 
 all_min_max_scaler = MinMaxScaler()
 all_min_max_scaler.fit(train_X)
-dump(all_min_max_scaler, './outputs/min_max_scaler.joblib') 
+
+min_max_df = pd.DataFrame({'variable': all_feats,
+                           'min': [m for m in all_min_max_scaler.data_min_],
+                           'max': [m for m in all_min_max_scaler.data_max_] })
+min_max_df.to_csv('./outputs/min_max_scaler.csv', index=False)
 
 scaled_train_x = all_min_max_scaler.transform(train_X)
 scaled_valid_X = all_min_max_scaler.transform(valid_X)

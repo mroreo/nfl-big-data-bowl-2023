@@ -1,4 +1,4 @@
-,variable,min,max
-0,pocket_penetration_ind,0.0,1.0
-1,penetration_time_since_snap_s,0.6,6.0
-2,pass_rusher_influence_score,0.0,0.0011102045968592715
+variable,min,max
+pocket_penetration_ind,0.0,1.0
+penetration_time_since_snap_s,0.6,6.0
+pass_rusher_influence_score,0.0,0.0011102045968592715
