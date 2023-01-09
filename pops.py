@@ -29,6 +29,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import roc_auc_score
 import scikitplot as skplt
 import matplotlib.pyplot as plt
+from joblib import dump, load
 
 pio.renderers.default = 'browser'
 
@@ -386,6 +387,7 @@ valid_y = valid_df['pass_incomplete_ind'].values
 
 all_min_max_scaler = MinMaxScaler()
 all_min_max_scaler.fit(train_X)
+dump(all_min_max_scaler, './outputs/min_max_scaler.joblib') 
 
 scaled_train_x = all_min_max_scaler.transform(train_X)
 scaled_valid_X = all_min_max_scaler.transform(valid_X)
@@ -401,8 +403,14 @@ roc_auc_score(valid_y, pred_valid_y)
 skplt.metrics.plot_roc_curve(valid_y, model.predict_proba(scaled_valid_X))
 plt.show()
 
+y =  + scaled_valid_X[0][0] * model.coef_[0][0] + scaled_valid_X[0][1] * model.coef_[0][1] + scaled_valid_X[0][2] * model.coef_[0][2]
+
+np.exp(y) / (1 + np.exp(y))
+
 all_feat_imp_df = pd.DataFrame({'variables':all_feats,
-                            'coefficients': model.coef_[0]})
+                                'coefficients': model.coef_[0]})
+all_feat_imp_df = pd.concat([all_feat_imp_df,pd.DataFrame({'variables': 'intercept',
+                                          'coefficients': model.intercept_}, index=[0])])
 
 all_feat_imp_df.to_csv('./outputs/feat_imp.csv', index=False)
 
