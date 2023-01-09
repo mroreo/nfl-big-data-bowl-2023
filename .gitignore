@@ -1,3 +1,4 @@
 *.csv
+!outputs/*.csv
 .spyproject
 __pycache__

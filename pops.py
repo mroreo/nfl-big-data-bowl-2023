@@ -24,6 +24,11 @@ from shapely.ops import unary_union
 from shapely.validation import make_valid
 from shapely.errors import ShapelyDeprecationWarning
 from PIL import Image
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import roc_auc_score
+import scikitplot as skplt
+import matplotlib.pyplot as plt
 
 pio.renderers.default = 'browser'
 
@@ -337,7 +342,10 @@ pocket_area_df = pocket_area_df[all_cols]
 pocket_area_df = pocket_area_df.groupby(['gameId', 'playId'],group_keys=True).apply(lambda x: gen_pocket_collapse_rate(x))
 pocket_area_df = pocket_area_df.reset_index(drop=True)
 
-#Generate All Pass Rusher Influences and differences
+#Build Logistic regression Model
+
+
+## Generate All Pass Rusher Influences and differences
 all_pr_influence_stats_df = pocket_area_df.groupby(['gameId', 'playId']).apply(lambda x: gen_all_pr_pocket_influence_areas(x, pass_blockers_poly_df, pass_rushers_poly_df))
 all_pr_influence_stats_df_calced = all_pr_influence_stats_df.reset_index(drop=True)
 all_pr_influence_stats_df_calced['all_pr_x_pb_influence_pocket_poly_area'] = all_pr_influence_stats_df_calced['all_pr_x_pb_influence_pocket_poly_area'].astype(float)
@@ -346,8 +354,9 @@ all_pr_influence_stats_df_calced['all_pr_influence_vs_pocket_area'] = all_pr_inf
 all_pr_influence_stats_df_calced['all_pr_influence_vs_pocket_area_discounted'] = all_pr_influence_stats_df_calced['all_pr_influence_vs_pocket_area'] / (1.3)**(all_pr_influence_stats_df_calced['frameId'] - all_pr_influence_stats_df_calced['snap_frameId'])
 all_pr_influence_stats_df_calced['time_since_snap_s'] = (pd.to_datetime(all_pr_influence_stats_df_calced['time']) - pd.to_datetime(all_pr_influence_stats_df_calced['snap_time'])).dt.total_seconds()
 
+## calculate the PRIS
 all_pr_feats_df = all_pr_influence_stats_df_calced.groupby(['gameId', 'playId'])['all_pr_influence_vs_pocket_area_discounted'].mean()
-all_pr_feats_df = all_pr_feats_df.reset_index().rename({'all_pr_influence_vs_pocket_area_discounted': 'PRIS'}, axis=1)
+all_pr_feats_df = all_pr_feats_df.reset_index().rename({'all_pr_influence_vs_pocket_area_discounted': 'pass_rusher_influence_score'}, axis=1)
 
 penetration_feat_df = all_pr_influence_stats_df_calced.query('all_pr_influence_vs_pocket_area > 0').groupby(['gameId', 'playId'])['time_since_snap_s'].min().reset_index().rename({'time_since_snap_s': 'penetration_time_since_snap_s'}, axis=1)
 all_pr_feats_df = all_pr_feats_df.merge(penetration_feat_df, how='left', on=['gameId', 'playId'])
@@ -358,27 +367,28 @@ all_pr_feats_df = all_pr_feats_df.merge(pff_scouting_df.groupby(['gameId', 'play
 
 all_pr_feats_df = all_pr_feats_df.merge(games_df[['gameId', 'week']], how='left', on='gameId')
 all_pr_feats_df = all_pr_feats_df.merge(plays_df[['gameId', 'playId', 'passResult']], how='left', on=['gameId', 'playId'])
+
+## Create the target variable
 all_pr_feats_df['pass_incomplete_ind'] = np.where(all_pr_feats_df['passResult'] == 'C', 0, 1) 
 
+## Select the features
+all_feats = ['pocket_penetration_ind', 'penetration_time_since_snap_s', 'pass_rusher_influence_score']
+
+## Create the train and validation values
 train_df = all_pr_feats_df.query('week <= 6')
 valid_df = all_pr_feats_df.query('week > 6')
 
-all_feats = ['pocket_penetration_ind', 'penetration_time_since_snap_s', 'PRIS']
 train_X = train_df[all_feats].values
 valid_X = valid_df[all_feats].values
 
 train_y = train_df['pass_incomplete_ind'].values
 valid_y = valid_df['pass_incomplete_ind'].values
 
-from sklearn.preprocessing import MinMaxScaler
-from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import roc_auc_score
+all_min_max_scaler = MinMaxScaler()
+all_min_max_scaler.fit(train_X)
 
-scaler = MinMaxScaler()
-scaler.fit(train_X)
-
-scaled_train_x = scaler.transform(train_X)
-scaled_valid_X = scaler.transform(valid_X)
+scaled_train_x = all_min_max_scaler.transform(train_X)
+scaled_valid_X = all_min_max_scaler.transform(valid_X)
 
 model = LogisticRegression(random_state=42)
 model.fit(scaled_train_x, train_y)
@@ -388,25 +398,17 @@ pred_valid_y = model.predict_proba(scaled_valid_X)[:,1]
 
 roc_auc_score(valid_y, pred_valid_y)
 
-import scikitplot as skplt
-import matplotlib.pyplot as plt
-
 skplt.metrics.plot_roc_curve(valid_y, model.predict_proba(scaled_valid_X))
 plt.show()
 
-feat_imp_df = pd.DataFrame({'variables':all_feats,
+all_feat_imp_df = pd.DataFrame({'variables':all_feats,
                             'coefficients': model.coef_[0]})
 
-sns.barplot(feat_imp_df, y='variables', x='coefficients')
+all_feat_imp_df.to_csv('./outputs/feat_imp.csv', index=False)
 
-all_pr_influence_stats_df_calced = all_pr_influence_stats_df_calced.groupby(['nflId', 'displayName']).apply(lambda x: pd.Series({'play_ct': len(x),
-                                                                                                               'non_zero_influence_cts': len(x[x['pr_influence_vs_pocket_area_discounted'] > 0]),
-                                                                                                               'pct_of_influenced_plays': len(x[x['pr_influence_vs_pocket_area_discounted'] > 0]) / len(x),
-                                                                                                               'avg_penetration_time': x['time_since_snap_s'].mean(),
-                                                                                                               'avg_influence_score': x[x['pr_influence_vs_pocket_area_discounted'] > 0]['pr_influence_vs_pocket_area_discounted'].mean()}))
+# Generate the individual scores
 
-
-#Generate the pass rusher influences and differences
+## Generate the pass rusher influences and differences
 pr_influence_stats_df = pocket_area_df.groupby(['gameId', 'playId']).apply(lambda x: get_pr_influences(x, pass_rushers_poly_df))
 pr_influence_stats_df_calced = pr_influence_stats_df.reset_index(drop=True) 
 pr_influence_stats_df_calced = pr_influence_stats_df_calced.merge(players_df[['nflId', 'displayName']], how='left', on='nflId')
@@ -417,37 +419,31 @@ pr_influence_stats_df_calced['pr_influence_vs_pocket_area'] = pr_influence_stats
 pr_influence_stats_df_calced['pr_influence_vs_pocket_area_discounted'] = pr_influence_stats_df_calced['pr_influence_vs_pocket_area'] / (1.3)**(pr_influence_stats_df_calced['frameId'] - pr_influence_stats_df_calced['snap_frameId'])
 pr_influence_stats_df_calced['time_since_snap_s'] = (pd.to_datetime(pr_influence_stats_df_calced['time']) - pd.to_datetime(pr_influence_stats_df_calced['snap_time'])).dt.total_seconds()
 
-#Merge pocket collapse rate
-pr_influence_stats_df_calced = pr_influence_stats_df_calced.merge(pocket_area_df[['gameId', 'playId','frameId', 'pocket_collapse_rate']], how='left', on=['gameId', 'playId', 'frameId'])
-
-#Calc influence growth rate
-pr_influence_stats_df_calced = pr_influence_stats_df_calced.groupby(['gameId', 'nflId', 'playId'], group_keys=True).apply(lambda x: calc_influence_growth_rate(x)).reset_index(drop=True)
-
 #Calc pocket penetration frame
 pocket_penetration_df = pr_influence_stats_df_calced.groupby(['gameId', 'playId']).apply(lambda x: get_pocket_penetration_frame(x))
 pocket_penetration_df = pocket_penetration_df.reset_index()
 
 all_games = all_gameplays_df = pocket_area_df[['gameId', 'playId']].drop_duplicates().reset_index(drop=True)
 
-idx = 0
-gameId = all_gameplays_df['gameId'].values[idx]
-playId = all_gameplays_df['playId'].values[idx]
+# idx = 0
+# gameId = all_gameplays_df['gameId'].values[idx]
+# playId = all_gameplays_df['playId'].values[idx]
 
-pr_stats_df = pr_influence_stats_df_calced.query('(gameId == @gameId) & (playId == @playId)')
-pocket_area_stats_df = pocket_area_df.query('(gameId == @gameId) & (playId == @playId)')
-pocket_penetration_df_subset = pocket_penetration_df.query('(gameId == @gameId) & (playId == @playId)')
+# pr_stats_df = pr_influence_stats_df_calced.query('(gameId == @gameId) & (playId == @playId)')
+# pocket_area_stats_df = pocket_area_df.query('(gameId == @gameId) & (playId == @playId)')
+# pocket_penetration_df_subset = pocket_penetration_df.query('(gameId == @gameId) & (playId == @playId)')
 
-pocket_penetration_frameId = pocket_penetration_df_subset['pocket_penetration_frameId'].values[0]
+# pocket_penetration_frameId = pocket_penetration_df_subset['pocket_penetration_frameId'].values[0]
 
-fig, ax = plt.subplots(4,1, figsize=(16,8))
-sns.lineplot(pocket_area_stats_df, x='frameId', y='pocket_area', ax=ax[0])
-sns.lineplot(pocket_area_stats_df, x='frameId', y='pocket_collapse_rate', ax=ax[1])
-ax[1].axhline(0, linestyle='--', alpha=0.5, color='gray')
-if pocket_penetration_frameId:
-    ax[1].axvline(pocket_penetration_frameId, linestyle='--', alpha=0.5, color='gray')
-sns.lineplot(pr_stats_df, x='frameId', y='pr_influence_vs_pocket_area', hue='displayName', ax=ax[2])
-sns.lineplot(pr_stats_df, x='frameId', y='pr_influence_vs_pocket_area_discounted', hue='displayName', ax=ax[3])
-plt.show()
+# fig, ax = plt.subplots(4,1, figsize=(16,8))
+# sns.lineplot(pocket_area_stats_df, x='frameId', y='pocket_area', ax=ax[0])
+# sns.lineplot(pocket_area_stats_df, x='frameId', y='pocket_collapse_rate', ax=ax[1])
+# ax[1].axhline(0, linestyle='--', alpha=0.5, color='gray')
+# if pocket_penetration_frameId:
+#     ax[1].axvline(pocket_penetration_frameId, linestyle='--', alpha=0.5, color='gray')
+# sns.lineplot(pr_stats_df, x='frameId', y='pr_influence_vs_pocket_area', hue='displayName', ax=ax[2])
+# sns.lineplot(pr_stats_df, x='frameId', y='pr_influence_vs_pocket_area_discounted', hue='displayName', ax=ax[3])
+# plt.show()
 
 player_pocket_pen_df = pr_influence_stats_df_calced.query('pr_influence_in_pocket_area > 0')
 player_pocket_pen_df = player_pocket_pen_df.groupby(['gameId', 'playId', 'nflId'])['time_since_snap_s'].min()
@@ -505,48 +501,48 @@ influenced_plays = influenced_plays.reindex(influenced_plays['time_since_snap_s'
 
 px.box(influenced_plays, x='displayName', y='time_since_snap_s')
 
-import plotly.express as px
-fig = px.scatter_3d(player_influence_scores, x='pct_of_influenced_plays', y='avg_penetration_time', z='avg_influence_score')
-fig.show()
+# import plotly.express as px
+# fig = px.scatter_3d(player_influence_scores, x='pct_of_influenced_plays', y='avg_penetration_time', z='avg_influence_score')
+# fig.show()
 
 
-pass_rushers_append_polygon = pass_rushers_poly_df[['gameId', 'playId', 'frameId', 'pr_point']].rename({'pr_point': 'player_polygon'}, axis=1)
-pass_rushers_append_polygon['team'] = 'player_polygon'
-pass_rushers_append_polygon['pff_role'] = 'Pass Rusher'
-pass_rusher_appended = pd.concat([week_df, pass_rushers_append_polygon], axis=0)
-all_gameplays_df = pass_rusher_appended[['gameId', 'playId']].drop_duplicates().reset_index(drop=True)
-idx = 0
-gameId = all_gameplays_df['gameId'].values[idx]
-playId = all_gameplays_df['playId'].values[idx]
-plot_game_play_id(pass_rusher_appended, gameId, playId, size=(1200, 800))
+# pass_rushers_append_polygon = pass_rushers_poly_df[['gameId', 'playId', 'frameId', 'pr_point']].rename({'pr_point': 'player_polygon'}, axis=1)
+# pass_rushers_append_polygon['team'] = 'player_polygon'
+# pass_rushers_append_polygon['pff_role'] = 'Pass Rusher'
+# pass_rusher_appended = pd.concat([week_df, pass_rushers_append_polygon], axis=0)
+# all_gameplays_df = pass_rusher_appended[['gameId', 'playId']].drop_duplicates().reset_index(drop=True)
+# idx = 0
+# gameId = all_gameplays_df['gameId'].values[idx]
+# playId = all_gameplays_df['playId'].values[idx]
+# plot_game_play_id(pass_rusher_appended, gameId, playId, size=(1200, 800))
 
-pass_blockers_append_polygon = pass_blockers_poly_df[['gameId', 'playId', 'frameId', 'pb_point']].rename({'pb_point': 'player_polygon'}, axis=1)
-pass_blockers_append_polygon['team'] = 'player_polygon'
-pass_blockers_append_polygon['pff_role'] = 'Pass Blocker'
-pass_blockers_appended = pd.concat([week_df, pass_blockers_append_polygon], axis=0)
-all_gameplays_df = pass_blockers_appended[['gameId', 'playId']].drop_duplicates().reset_index(drop=True)
-idx = 0
-gameId = all_gameplays_df['gameId'].values[idx]
-playId = all_gameplays_df['playId'].values[idx]
-plot_game_play_id(pass_blockers_appended, gameId, playId, size=(1200, 800))
+# pass_blockers_append_polygon = pass_blockers_poly_df[['gameId', 'playId', 'frameId', 'pb_point']].rename({'pb_point': 'player_polygon'}, axis=1)
+# pass_blockers_append_polygon['team'] = 'player_polygon'
+# pass_blockers_append_polygon['pff_role'] = 'Pass Blocker'
+# pass_blockers_appended = pd.concat([week_df, pass_blockers_append_polygon], axis=0)
+# all_gameplays_df = pass_blockers_appended[['gameId', 'playId']].drop_duplicates().reset_index(drop=True)
+# idx = 0
+# gameId = all_gameplays_df['gameId'].values[idx]
+# playId = all_gameplays_df['playId'].values[idx]
+# plot_game_play_id(pass_blockers_appended, gameId, playId, size=(1200, 800))
 
-pb_and_pr_appended = pd.concat([week_df, pass_blockers_append_polygon, pass_rushers_append_polygon], axis=0)
-all_gameplays_df = pb_and_pr_appended[['gameId', 'playId']].drop_duplicates().reset_index(drop=True)
-idx = 0
-gameId = all_gameplays_df['gameId'].values[idx]
-playId = all_gameplays_df['playId'].values[idx]
-plot_game_play_id(pb_and_pr_appended, gameId, playId, size=(1200, 800))
+# pb_and_pr_appended = pd.concat([week_df, pass_blockers_append_polygon, pass_rushers_append_polygon], axis=0)
+# all_gameplays_df = pb_and_pr_appended[['gameId', 'playId']].drop_duplicates().reset_index(drop=True)
+# idx = 0
+# gameId = all_gameplays_df['gameId'].values[idx]
+# playId = all_gameplays_df['playId'].values[idx]
+# plot_game_play_id(pb_and_pr_appended, gameId, playId, size=(1200, 800))
 
-pass_rusher_influence_append_polygon = all_pr_influence_stats_df_calced[['gameId', 'playId', 'frameId', 'all_pr_x_pb_influence_pocket_poly']].rename({'all_pr_x_pb_influence_pocket_poly': 'pr_pocket_influence_polygon'}, axis=1)
-pass_rusher_influence_append_polygon['team'] = 'pr_pocket_influence_polygon'
-pass_rusher_influence_append_polygon['pff_role'] = 'Pass Rusher Pocket Influence'
+# pass_rusher_influence_append_polygon = all_pr_influence_stats_df_calced[['gameId', 'playId', 'frameId', 'all_pr_x_pb_influence_pocket_poly']].rename({'all_pr_x_pb_influence_pocket_poly': 'pr_pocket_influence_polygon'}, axis=1)
+# pass_rusher_influence_append_polygon['team'] = 'pr_pocket_influence_polygon'
+# pass_rusher_influence_append_polygon['pff_role'] = 'Pass Rusher Pocket Influence'
 
-pocket_influence_appended = pd.concat([week_df, pass_blockers_append_polygon, pass_rushers_append_polygon, pass_rusher_influence_append_polygon], axis=0)
-all_gameplays_df = pb_and_pr_appended[['gameId', 'playId']].drop_duplicates().reset_index(drop=True)
-idx = 0
-gameId = all_gameplays_df['gameId'].values[idx]
-playId = all_gameplays_df['playId'].values[idx]
-plot_game_play_id(pocket_influence_appended, gameId, playId, size=(1200, 800))
+# pocket_influence_appended = pd.concat([week_df, pass_blockers_append_polygon, pass_rushers_append_polygon, pass_rusher_influence_append_polygon], axis=0)
+# all_gameplays_df = pb_and_pr_appended[['gameId', 'playId']].drop_duplicates().reset_index(drop=True)
+# idx = 0
+# gameId = all_gameplays_df['gameId'].values[idx]
+# playId = all_gameplays_df['playId'].values[idx]
+# plot_game_play_id(pocket_influence_appended, gameId, playId, size=(1200, 800))
 
 
 

@@ -67,7 +67,7 @@ def plot_play_df(fig, play_df, colors=COLORS):
             
             hover_txt_arr = gen_hover_txt(group_df)
             
-            if team != 'football' and team != 'pocket_polygon' and team != 'affected_pocket_polygon' and team != 'player_polygon':
+            if team != 'football' and team != 'pocket_polygon' and team != 'affected_pocket_polygon' and team != 'player_polygon' and team != 'pr_pocket_influence_polygon':
                 fig.add_trace(go.Scatter(x=group_df["x"], y=group_df["y"],mode = 'markers',marker_color=colors[team],name=team,
                                          hovertemplate=hover_txt_arr, visible=False))
                 j_idx.append(counter)
@@ -144,6 +144,7 @@ def plot_play_df(fig, play_df, colors=COLORS):
                     
                     j_idx.append(counter)
                     counter += 1
+                
         frame_id_dict[frameId] = j_idx
     
     steps = []
