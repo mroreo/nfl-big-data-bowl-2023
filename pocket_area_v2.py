@@ -346,12 +346,12 @@ all_pr_influence_stats_df_calced['all_pr_influence_vs_pocket_area'] = all_pr_inf
 all_pr_influence_stats_df_calced['all_pr_influence_vs_pocket_area_discounted'] = all_pr_influence_stats_df_calced['all_pr_influence_vs_pocket_area'] / (1.3)**(all_pr_influence_stats_df_calced['frameId'] - all_pr_influence_stats_df_calced['snap_frameId'])
 all_pr_influence_stats_df_calced['time_since_snap_s'] = (pd.to_datetime(all_pr_influence_stats_df_calced['time']) - pd.to_datetime(all_pr_influence_stats_df_calced['snap_time'])).dt.total_seconds()
 
-all_pr_feats_df = all_pr_influence_stats_df_calced.groupby(['gameId', 'playId'])['all_pr_influence_vs_pocket_area_discounted'].sum()
-all_pr_feats_df = all_pr_feats_df.reset_index()
+all_pr_feats_df = all_pr_influence_stats_df_calced.groupby(['gameId', 'playId'])['all_pr_influence_vs_pocket_area_discounted'].mean()
+all_pr_feats_df = all_pr_feats_df.reset_index().rename({'all_pr_influence_vs_pocket_area_discounted': 'PRIS'}, axis=1)
 
 penetration_feat_df = all_pr_influence_stats_df_calced.query('all_pr_influence_vs_pocket_area > 0').groupby(['gameId', 'playId'])['time_since_snap_s'].min().reset_index().rename({'time_since_snap_s': 'penetration_time_since_snap_s'}, axis=1)
 all_pr_feats_df = all_pr_feats_df.merge(penetration_feat_df, how='left', on=['gameId', 'playId'])
-all_pr_feats_df['no_pocket_penetration_ind'] = np.where(pd.isnull(all_pr_feats_df['penetration_time_since_snap_s']), 1, 0)
+all_pr_feats_df['pocket_penetration_ind'] = np.where(pd.isnull(all_pr_feats_df['penetration_time_since_snap_s']), 0, 1)
 all_pr_feats_df['penetration_time_since_snap_s'] = np.where(all_pr_feats_df['penetration_time_since_snap_s'] > 5, 5, all_pr_feats_df['penetration_time_since_snap_s'])
 all_pr_feats_df['penetration_time_since_snap_s'] = all_pr_feats_df['penetration_time_since_snap_s'].fillna(6)
 all_pr_feats_df = all_pr_feats_df.merge(pff_scouting_df.groupby(['gameId', 'playId'])['pff_hurry'].max().reset_index(), how='left', on=['gameId', 'playId'])
@@ -363,7 +363,7 @@ all_pr_feats_df['pass_incomplete_ind'] = np.where(all_pr_feats_df['passResult'] 
 train_df = all_pr_feats_df.query('week <= 6')
 valid_df = all_pr_feats_df.query('week > 6')
 
-all_feats = ['pff_hurry']#,'no_pocket_penetration_ind', 'penetration_time_since_snap_s', 'all_pr_influence_vs_pocket_area_discounted']
+all_feats = ['pff_hurry','pocket_penetration_ind', 'penetration_time_since_snap_s', 'PRIS']
 train_X = train_df[all_feats].values
 valid_X = valid_df[all_feats].values
 
