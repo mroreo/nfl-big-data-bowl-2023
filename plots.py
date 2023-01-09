@@ -170,6 +170,7 @@ def plot_play_df(fig, play_df, colors=COLORS):
     )
     
 def plot_game_play_id(game_df, gameId, playId, size=(800, 400)):
+    
     play_df = game_df.query('(gameId == @gameId) & (playId == @playId)')
     play_df['displayName'] = np.where(play_df['team'].isin(['football','pocket_polygon','affected_pocket_polygon', 'player_polygon']), '',play_df['displayName'])
     
