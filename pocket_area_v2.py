@@ -363,7 +363,7 @@ all_pr_feats_df['pass_incomplete_ind'] = np.where(all_pr_feats_df['passResult'] 
 train_df = all_pr_feats_df.query('week <= 6')
 valid_df = all_pr_feats_df.query('week > 6')
 
-all_feats = ['no_pocket_penetration_ind', 'penetration_time_since_snap_s', 'all_pr_influence_vs_pocket_area_discounted']
+all_feats = ['pff_hurry']#,'no_pocket_penetration_ind', 'penetration_time_since_snap_s', 'all_pr_influence_vs_pocket_area_discounted']
 train_X = train_df[all_feats].values
 valid_X = valid_df[all_feats].values
 
@@ -380,7 +380,7 @@ scaler.fit(train_X)
 scaled_train_x = scaler.transform(train_X)
 scaled_valid_X = scaler.transform(valid_X)
 
-model = LogisticRegression(random_state=42, )
+model = LogisticRegression(random_state=42)
 model.fit(scaled_train_x, train_y)
 
 pred_train_y = model.predict_proba(scaled_train_x)[:,1]
@@ -393,6 +393,11 @@ import matplotlib.pyplot as plt
 
 skplt.metrics.plot_roc_curve(valid_y, model.predict_proba(scaled_valid_X))
 plt.show()
+
+feat_imp_df = pd.DataFrame({'variables':all_feats,
+                            'coefficients': model.coef_[0]})
+
+sns.barplot(feat_imp_df, y='variables', x='coefficients')
 
 all_pr_influence_stats_df_calced = all_pr_influence_stats_df_calced.groupby(['nflId', 'displayName']).apply(lambda x: pd.Series({'play_ct': len(x),
                                                                                                                'non_zero_influence_cts': len(x[x['pr_influence_vs_pocket_area_discounted'] > 0]),
@@ -531,3 +536,17 @@ idx = 0
 gameId = all_gameplays_df['gameId'].values[idx]
 playId = all_gameplays_df['playId'].values[idx]
 plot_game_play_id(pb_and_pr_appended, gameId, playId, size=(1200, 800))
+
+pass_rusher_influence_append_polygon = all_pr_influence_stats_df_calced[['gameId', 'playId', 'frameId', 'all_pr_x_pb_influence_pocket_poly']].rename({'all_pr_x_pb_influence_pocket_poly': 'pr_pocket_influence_polygon'}, axis=1)
+pass_rusher_influence_append_polygon['team'] = 'pr_pocket_influence_polygon'
+pass_rusher_influence_append_polygon['pff_role'] = 'Pass Rusher Pocket Influence'
+
+pocket_influence_appended = pd.concat([week_df, pass_blockers_append_polygon, pass_rushers_append_polygon, pass_rusher_influence_append_polygon], axis=0)
+all_gameplays_df = pb_and_pr_appended[['gameId', 'playId']].drop_duplicates().reset_index(drop=True)
+idx = 0
+gameId = all_gameplays_df['gameId'].values[idx]
+playId = all_gameplays_df['playId'].values[idx]
+plot_game_play_id(pocket_influence_appended, gameId, playId, size=(1200, 800))
+
+
+
